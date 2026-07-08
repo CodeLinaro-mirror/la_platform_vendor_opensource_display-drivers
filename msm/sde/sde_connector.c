@@ -1384,6 +1384,8 @@ static int _sde_connector_update_dirty_properties(
 	bool is_lp_dirty = false;
 	bool is_qsync_dirty = false;
 	bool is_vsync_offset_dirty = false;
+	bool is_privacy_v1_dirty = false;
+	bool is_privacy_v2_dirty = false;
 
 	if (!connector) {
 		SDE_ERROR("invalid argument\n");
@@ -1439,6 +1441,12 @@ static int _sde_connector_update_dirty_properties(
 					CONNECTOR_PROP_VSYNC_OFFSET)) > 0)
 				is_vsync_offset_dirty = true;
 			break;
+		case CONNECTOR_PROP_PRIVACY_LAYER_V1:
+			is_privacy_v1_dirty = true;
+			break;
+		case CONNECTOR_PROP_PRIVACY_LAYER_V2:
+			is_privacy_v2_dirty = true;
+			break;
 		default:
 			/* nothing to do for most properties */
 			break;
@@ -1490,6 +1498,14 @@ static int _sde_connector_update_dirty_properties(
 	if ((disp_op == MSM_DISP_OP_HFI) && is_vsync_offset_dirty)
 		msm_property_set_dirty(&c_conn->property_info,
 			&c_state->property_state, CONNECTOR_PROP_VSYNC_OFFSET);
+
+	if ((disp_op == MSM_DISP_OP_HFI) && is_privacy_v1_dirty)
+		msm_property_set_dirty(&c_conn->property_info,
+			&c_state->property_state, CONNECTOR_PROP_PRIVACY_LAYER_V1);
+
+	if ((disp_op == MSM_DISP_OP_HFI) && is_privacy_v2_dirty)
+		msm_property_set_dirty(&c_conn->property_info,
+			&c_state->property_state, CONNECTOR_PROP_PRIVACY_LAYER_V2);
 
 	return 0;
 }
