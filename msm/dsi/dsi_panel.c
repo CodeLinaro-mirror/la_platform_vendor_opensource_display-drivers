@@ -19,6 +19,7 @@
 #include "dsi_panel.h"
 #include "dsi_ctrl_hw.h"
 #include "dsi_defs.h"
+#include "dsi_display.h"
 #include "dsi_parser.h"
 #include "sde_dbg.h"
 #include "sde_dsc_helper.h"
@@ -459,6 +460,9 @@ static int dsi_panel_tx_cmd_set(struct dsi_panel *panel,
 			 panel->name, type);
 		goto error;
 	}
+
+	if (type == DSI_CMD_SET_PANEL_SYNC)
+		dsi_display_set_keep_dma_done_irq(panel->host);
 
 	for (i = 0; i < count; i++) {
 		cmds->ctrl_flags = 0;
