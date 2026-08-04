@@ -647,6 +647,8 @@ struct dsi_split_link_config {
  *			 cmd it points to the line after TE.
  * @dma_sched_window:	 Determines the width of the window during the
  *			 DSI command will be sent by the HW.
+ * @dma_sched_en:        Indicates whether dma_sched_line/dma_sched_window values
+ *			 should be honored as-is, including a value of zero.
  * @skip_pps_update:	 Skip sending pps command.
  */
 struct dsi_host_common_cfg {
@@ -679,6 +681,7 @@ struct dsi_host_common_cfg {
 	u32 byte_intf_clk_div;
 	u32 dma_sched_line;
 	u32 dma_sched_window;
+	bool dma_sched_en;
 	bool skip_pps_update;
 };
 
