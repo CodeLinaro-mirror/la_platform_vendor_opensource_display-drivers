@@ -535,6 +535,7 @@ struct sde_kms {
 
 	u32 lpai_buf_size;
 	unsigned long lpai_buf_base;
+	bool lpai_hyp_assigned;      /* true once hyp_assign to ADSP/LPASS succeeds */
 };
 
 struct vsync_info {
