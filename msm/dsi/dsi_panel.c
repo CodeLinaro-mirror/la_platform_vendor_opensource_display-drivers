@@ -4407,6 +4407,14 @@ static int dsi_panel_parse_dms_info(struct dsi_panel *panel)
 	panel->dms_vid_caps.maintain_const_clk = utils->read_bool(utils->data,
 		"qcom,dms-vid-maintain-const-clk");
 
+	/*
+	 * On HFI, when enabled the DMS timing switch command is tagged so the
+	 * DCP triggers its DMA on the MDP frame flush boundary (peripheral
+	 * flush) rather than issuing it immediately. Panel-specific.
+	 */
+	panel->dms_peripheral_flush_en = utils->read_bool(utils->data,
+		"qcom,mdss-dsi-dms-timing-switch-peripheral-flush");
+
 	panel->dms_mode = DSI_DMS_MODE_DISABLED;
 	dms_enabled = utils->read_bool(utils->data,
 		"qcom,dynamic-mode-switch-enabled");
