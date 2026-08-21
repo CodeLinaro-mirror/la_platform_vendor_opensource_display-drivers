@@ -1097,6 +1097,20 @@
 #define HFI_PROPERTY_PANEL_GENERIC_SDP_INFO                          0x0004004B
 
 /*
+ * HFI_PROPERTY_PANEL_INTRA_FRAME_DCVS_LEVEL - Specifies whether intra frame dcvs support
+ *                                              is to be enabled.
+ *                                              This property is sent to DCP as part of
+ *                                              HFI_COMMAND_PANEL_INIT_GENERIC_CAPS
+ *                                              command packet payload.
+ *
+ * @PanelInit - HFI_PROPERTY_PANEL_INTRA_FRAME_DCVS_LEVEL
+ *     (u32_key) payload[0]    : HFI_PROPERTY_PANEL_INTRA_FRAME_DCVS_LEVEL \|
+ *                               (version=0 << 20) \| (dsize=1 << 24)
+ *   (u32_value) payload[1]    : enum hfi_intra_frame_dcvs_level
+ */
+#define HFI_PROPERTY_PANEL_INTRA_FRAME_DCVS_LEVEL                   0x0004004C
+
+/*
  * HFI_PROPERTY_PANEL_SPLIT_LINK - Specifies whether split link is enabled
  *                                 for this panel and, if so, how many lanes
  *                                 belong to each sublink.
