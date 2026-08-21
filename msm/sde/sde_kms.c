@@ -5767,7 +5767,9 @@ static int sde_kms_hw_init(struct msm_kms *kms)
 	sde_kms->affinity_notify.release = sde_kms_irq_affinity_release;
 
 #if IS_ENABLED(CONFIG_DRM_MSM_HYP)
-	// No hardware irq mapped to guest VM
+	/* No hardware IRQ mapped to guest VM; initialize mask for cpu0 PM QoS voting */
+	cpumask_clear(&sde_kms->irq_cpu_mask);
+	cpumask_set_cpu(0, &sde_kms->irq_cpu_mask);
 #else
 	irq_num = platform_get_irq(to_platform_device(sde_kms->dev->dev), 0);
 	SDE_DEBUG("Registering for notification of irq_num: %d\n", irq_num);
