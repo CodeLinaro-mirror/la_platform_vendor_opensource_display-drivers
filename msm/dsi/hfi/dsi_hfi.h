@@ -246,6 +246,7 @@ struct dsi_panel_timing_caps {
  * @phy_tuning_config:              HFI_PROPERTY_PANEL_PHY_TUNING_CONFIG
  * @phy_tuning_config_valid:        true if phy_tuning_config has been populated
  * @pll_config:                     HFI_PROPERTY_PANEL_PLL_CONFIG
+ * @intra_frame_dcvs_enable:        HFI_PROPERTY_PANEL_INTRA_FRAME_DCVS_SUPPORT
  */
 struct dsi_panel_generic_caps {
 	u32 panel_name;
@@ -290,6 +291,7 @@ struct dsi_panel_generic_caps {
 	struct hfi_panel_phy_tuning_config phy_tuning_config;
 	bool phy_tuning_config_valid;
 	struct hfi_panel_pll_config pll_config;
+	enum hfi_intra_frame_dcvs_level intra_frame_dcvs_level;
 };
 
 /**
