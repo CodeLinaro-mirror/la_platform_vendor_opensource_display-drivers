@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2021-2024 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  * Copyright (c) 2015-2021, The Linux Foundation. All rights reserved.
  */
 
@@ -500,6 +500,7 @@ static void sde_encoder_phys_cmd_autorefresh_done_irq(void *arg, int irq_idx)
 	if (!cmd_enc)
 		return;
 
+	SDE_ATRACE_BEGIN("autorefresh_done_irq");
 	phys_enc = &cmd_enc->base;
 	spin_lock_irqsave(phys_enc->enc_spinlock, lock_flags);
 	new_cnt = atomic_add_unless(&cmd_enc->autorefresh.kickoff_cnt, -1, 0);
@@ -511,8 +512,13 @@ static void sde_encoder_phys_cmd_autorefresh_done_irq(void *arg, int irq_idx)
 	if (new_cnt)
 		_sde_encoder_phys_signal_frame_done(phys_enc);
 
+	if (phys_enc->parent_ops.handle_vblank_virt
+			&& _sde_encoder_phys_cmd_get_autorefresh_property(phys_enc))
+		phys_enc->parent_ops.handle_vblank_virt(phys_enc->parent, phys_enc);
+
 	/* Signal any waiting atomic commit thread */
 	wake_up_all(&cmd_enc->autorefresh.kickoff_wq);
+	SDE_ATRACE_END("autorefresh_done_irq");
 }
 
 static void sde_encoder_phys_cmd_te_rd_ptr_irq(void *arg, int irq_idx)
@@ -557,7 +563,8 @@ static void sde_encoder_phys_cmd_te_rd_ptr_irq(void *arg, int irq_idx)
 
 	_sde_encoder_phys_cmd_process_sim_qsync_event(phys_enc, SDE_SIM_QSYNC_EVENT_TE_TRIGGER);
 
-	if (phys_enc->parent_ops.handle_vblank_virt)
+	if (phys_enc->parent_ops.handle_vblank_virt
+				&& !_sde_encoder_phys_cmd_get_autorefresh_property(phys_enc))
 		phys_enc->parent_ops.handle_vblank_virt(phys_enc->parent,
 			phys_enc);
 
