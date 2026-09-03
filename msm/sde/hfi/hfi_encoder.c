@@ -379,7 +379,6 @@ static void hfi_encoder_panel_dead_callback(struct sde_encoder_virt *sde_enc, vo
 	}
 
 	hfi_connector_set_esd_recovery_pending(sde_conn);
-	wake_up_all(&hfi_enc->pending_kickoff_wq);
 	hfi_connector_report_panel_dead(sde_conn, false);
 }
 

@@ -7,6 +7,7 @@
 
 #include "hfi_catalog.h"
 #include "hfi_connector.h"
+#include "hfi_encoder.h"
 #include "hfi_kms.h"
 #include "hfi_wb.h"
 #include "hfi_crtc.h"
@@ -1054,9 +1055,28 @@ void hfi_connector_set_esd_recovery_pending(struct sde_connector *c_conn)
 
 void hfi_connector_report_panel_dead(struct sde_connector *c_conn, bool skip_pre_kickoff)
 {
+	struct drm_encoder *drm_enc;
+	struct sde_encoder_virt *sde_enc;
+	struct hfi_encoder *hfi_enc;
+
 	if (!c_conn || !c_conn->display)
 		return;
 
+	drm_enc = c_conn->encoder;
+	if (!drm_enc)
+		goto end;
+
+	sde_enc = to_sde_encoder_virt(drm_enc);
+	if (!sde_enc)
+		goto end;
+
+	hfi_enc = to_hfi_encoder(sde_enc);
+	if (!hfi_enc)
+		goto end;
+
+	wake_up_all(&hfi_enc->pending_kickoff_wq);
+
+end:
 	sde_connector_report_panel_dead(c_conn, skip_pre_kickoff);
 }
 
