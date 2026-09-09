@@ -562,7 +562,7 @@ int dsi_panel_power_off(struct dsi_panel *panel)
 		       rc);
 	}
 
-	if (atomic_read(&panel->ssr_in_progress)) {
+	if (atomic_read(&panel->ssr_in_progress) || atomic_read(&panel->esd_recovery_pending)) {
 		/*
 		 * Due to an abrupt device crash, the proper power-off sequence cannot
 		 * be followed, including sending the sleep-in command to the panel.
