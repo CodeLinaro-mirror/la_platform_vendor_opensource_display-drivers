@@ -8960,6 +8960,8 @@ int dsi_display_post_enable(struct dsi_display *display)
 				display->name, rc);
 	}
 
+	dsi_panel_send_panel_sync_dcs(display->panel);
+
 	/* remove the clk vote for CMD mode panels */
 	if (display->config.panel_mode == DSI_OP_CMD_MODE)
 		dsi_display_clk_ctrl(display->dsi_clk_handle,
