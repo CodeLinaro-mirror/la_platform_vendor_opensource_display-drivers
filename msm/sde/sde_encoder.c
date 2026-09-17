@@ -240,9 +240,15 @@ ktime_t sde_encoder_event_timestamp_adjust(u32 drm_enc_id, u32 event_fps, u64 ev
 {
 	u64 cur_timestamp_hw, hw_diff, hw_diff_ns, event_period_ns;
 	ktime_t event_timestamp_sw, cur_time_sw;
+	spinlock_t local_lock;
+	unsigned long lock_flags;
 
+	/* using spinlock to avoid being preempted while getting the HW and kernel timestamp */
+	spin_lock_init(&local_lock);
+	spin_lock_irqsave(&local_lock, lock_flags);
 	cur_timestamp_hw = arch_timer_read_counter();
 	cur_time_sw = ktime_get_ns();
+	spin_unlock_irqrestore(&local_lock, lock_flags);
 
 	/* check for counter rollover between the two timestamps [56 bits] */
 	if (cur_timestamp_hw < event_timestamp_hw) {
