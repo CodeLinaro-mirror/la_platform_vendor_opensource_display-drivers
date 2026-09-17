@@ -27,6 +27,8 @@
 #include <linux/of_irq.h>
 #include <linux/dma-buf.h>
 #include <linux/memblock.h>
+#include <linux/mm.h>
+#include <linux/scatterlist.h>
 #include <linux/soc/qcom/panel_event_notifier.h>
 #include <drm/drm_atomic_uapi.h>
 #include <drm/drm_probe_helper.h>
@@ -1109,6 +1111,54 @@ static void _sde_kms_parse_lpai_region(struct sde_kms *sde_kms)
 
 	SDE_DEBUG("LPAI display region: base=0x%lx size=0x%x\n",
 			sde_kms->lpai_buf_base, sde_kms->lpai_buf_size);
+}
+
+/* Grant ADSP/LPASS shared RW access to the lpai_display_region */
+static int _sde_kms_hyp_assign_lpai_region(struct sde_kms *sde_kms)
+{
+	struct page     *page;
+	struct sg_table  sgt;
+	int              ret;
+
+	if (!sde_kms->lpai_buf_base || !sde_kms->lpai_buf_size)
+		return 0;
+
+	if (!PAGE_ALIGNED(sde_kms->lpai_buf_base) || !PAGE_ALIGNED(sde_kms->lpai_buf_size))
+		return -EINVAL;
+
+	page = phys_to_page(sde_kms->lpai_buf_base);
+	if (!page)
+		return -EINVAL;
+
+	ret = sg_alloc_table(&sgt, 1, GFP_KERNEL);
+	if (ret)
+		return ret;
+	sg_set_page(sgt.sgl, page, sde_kms->lpai_buf_size, 0);
+
+#if IS_ENABLED(CONFIG_QCOM_SECURE_BUFFER)
+	{
+		u32 src_vmids[]  = { VMID_HLOS };
+		int dst_vmids[]  = { VMID_LPASS, VMID_ADSP_HEAP, VMID_HLOS };
+		int dst_perms[]  = { PERM_READ | PERM_WRITE,
+				     PERM_READ | PERM_WRITE,
+				     PERM_READ | PERM_WRITE };
+
+		ret = hyp_assign_table(&sgt,
+					src_vmids, ARRAY_SIZE(src_vmids),
+					dst_vmids, dst_perms, ARRAY_SIZE(dst_vmids));
+	}
+#else
+	ret = -ENODEV;
+#endif
+
+	sde_kms->lpai_hyp_assigned = (ret == 0);
+	sg_free_table(&sgt);
+
+	SDE_DEBUG("LPAI hyp_assign: base=0x%lx size=0x%x %s ret=%d\n",
+		  sde_kms->lpai_buf_base, sde_kms->lpai_buf_size,
+		  ret ? "FAILED" : "SUCCESS", ret);
+
+	return ret;
 }
 
 static int _sde_kms_get_blank(struct drm_crtc_state *crtc_state,
@@ -7238,6 +7288,9 @@ static int sde_kms_hw_init(struct msm_kms *kms)
 		SDE_DEBUG("sde splash data fetch failed: %d\n", rc);
 
 	_sde_kms_parse_lpai_region(sde_kms);
+
+	if (sde_kms->lpai_buf_base)
+		_sde_kms_hyp_assign_lpai_region(sde_kms);
 
 	rc = _sde_kms_hw_init_blocks(sde_kms, dev, priv);
 	if (rc)
