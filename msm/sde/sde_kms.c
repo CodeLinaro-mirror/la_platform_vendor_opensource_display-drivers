@@ -3013,6 +3013,12 @@ static int sde_kms_hfi_boot_init(struct sde_kms *sde_kms)
 		return -EPROBE_DEFER;
 	}
 
+	ret = hfi_kms_send_generic_device_caps(sde_kms->hfi_kms);
+	if (ret) {
+		SDE_ERROR("HFI send generic device caps failed\n");
+		return -EPROBE_DEFER;
+	}
+
 	sde_dbg_setup(sde_kms->dev->dev);
 
 	return ret;
@@ -6039,6 +6045,12 @@ static int sde_kms_pm_restore(struct device *dev)
 	ret = hfi_kms_get_catalog_data(hfi_kms);
 	if (ret) {
 		SDE_ERROR("failed to get catalog data, ret: %d\n", ret);
+		return ret;
+	}
+
+	ret = hfi_kms_send_generic_device_caps(hfi_kms);
+	if (ret) {
+		SDE_ERROR("failed to send generic device caps, ret: %d\n", ret);
 		return ret;
 	}
 
