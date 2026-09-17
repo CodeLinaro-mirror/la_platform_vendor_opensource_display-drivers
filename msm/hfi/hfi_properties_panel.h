@@ -886,17 +886,24 @@
 
 /*
  * HFI_PROPERTY_PANEL_ULPS_SUPPORTED - Specifies whether ULPS (Ultra Low Power State)
- *                                     is supported by the panel.
+ *                                     is supported by the panel, and whether ULPS is
+ *                                     supported while the display is suspended.
  *                                     This property is sent to DCP as part of
  *                                     HFI_COMMAND_PANEL_INIT_GENERIC_CAPS command packet payload.
+ *
+ *                                     The single u32 value payload is bit-packed as:
+ *                                     - bits[15:0]  : ulps_supported
+ *                                                     (HFI_TRUE / HFI_FALSE)
+ *                                     - bits[31:16] : suspend_ulps_supported
+ *                                                     (HFI_TRUE / HFI_FALSE)
  *
  * @PanelInit - HFI_PROPERTY_PANEL_ULPS_SUPPORTED
  *
  * Hfi packet layout           | Value
  *-----------------------------|------------------------------------------
- *     (u32_key) payload[0]    | HFI_PROPERTY_PANEL_ULPS_SUPPORTED \|
- * ^                           | (version=0 << 20) \| (dsize=1 << 24 )
- *   (u32_value) payload[1]    | HFI_TRUE / HFI_FALSE
+ *     (u32_key) payload[0]    | HFI_PROPERTY_PANEL_ULPS_SUPPORTED |
+ * ^                           | (version=0 << 20) | (dsize=1 << 24 )
+ *   (u32_value) payload[1]    | (suspend_ulps_supported << 16) | ulps_supported
  */
 #define HFI_PROPERTY_PANEL_ULPS_SUPPORTED                            0x0004003B
 

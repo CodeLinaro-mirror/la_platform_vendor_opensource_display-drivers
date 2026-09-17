@@ -2352,7 +2352,9 @@ static void dsi_hfi_populate_panel_generic_caps(struct dsi_display *display,
 	panel_generic_caps->custom_cmd_set_info[0] = DSI_CUSTOM_CMD_SET_START_IDX;
 	panel_generic_caps->custom_cmd_set_info[1] = DSI_CUSTOM_CMD_SET_COUNT;
 
-	panel_generic_caps->ulps_supported = panel->ulps_feature_enabled;
+	panel_generic_caps->ulps_supported =
+		(panel->ulps_feature_enabled & 0xFFFF) |
+		((panel->ulps_suspend_enabled & 0xFFFF) << 16);
 	if (dsi_get_panel_phy_tuning_config_helper(display,
 			&panel_generic_caps->phy_tuning_config))
 		panel_generic_caps->phy_tuning_config_valid = true;
