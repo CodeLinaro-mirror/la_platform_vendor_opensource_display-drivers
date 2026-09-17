@@ -1214,6 +1214,19 @@ static int hfi_panel_fill_dcs_cmds_sub(struct dsi_display *display,
 		panel_cmd_info->delay = cmd_set->cmds[i].post_wait_ms;
 		panel_cmd_info->ctrl_flags = cmd_set->cmds[i].ctrl_flags;
 		panel_cmd_info->reserved1 = cmd_set->cmds[i].msg.flags;
+		/*
+		 * The DMS timing switch command is replayed by the DCP, not sent
+		 * from the host. For panels that opt in via
+		 * qcom,mdss-dsi-dms-timing-switch-peripheral-flush, tag it so the DCP
+		 * triggers the command DMA on the MDP frame-flush boundary
+		 * (DSI_CTRL_CMD_PERIPHERAL_FLUSH) and defers the DMA-done wait
+		 * (MIPI_DSI_MSG_ASYNC_OVERRIDE) instead of blocking on it.
+		 */
+		if (cmd_set->type == DSI_CMD_SET_TIMING_SWITCH &&
+				display->panel->dms_peripheral_flush_en) {
+			panel_cmd_info->ctrl_flags |= DSI_CTRL_CMD_PERIPHERAL_FLUSH;
+			panel_cmd_info->reserved1 |= MIPI_DSI_MSG_ASYNC_OVERRIDE;
+		}
 		panel_cmd_info->mode = cmd_set->state;
 
 		rc = dsi_hfi_packetize_panel_cmd(&cmd_set->cmds[i], &size_of_indv_cmd, *sde_vaddr);
