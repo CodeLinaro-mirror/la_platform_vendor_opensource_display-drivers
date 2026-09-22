@@ -1316,10 +1316,12 @@ static u8 lt9611uxd_read_fw_crc(struct lt9611uxd *pdata)
 {
 	u8 ucFwCrcReg = 0;
 
+	lt9611uxd_ctl_en(pdata);
 	if (!lt9611uxd_read(pdata, 0x21, &ucFwCrcReg, 1))
 		dev_dbg(pdata->dev, "LT9611 get ucFwCrcReg: 0x%x\n", ucFwCrcReg);
 	else
 		dev_err(pdata->dev, "LT9611 get ucFwCrcReg failed\n");
+	lt9611uxd_ctl_disable(pdata);
 
 	return ucFwCrcReg;
 }
