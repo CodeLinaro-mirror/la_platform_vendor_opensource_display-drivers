@@ -5,6 +5,7 @@
 
 #define pr_fmt(fmt)	"[drm:virtio-kms:%s:%d] " fmt, __func__, __LINE__
 #include <linux/sort.h>
+#include <linux/log2.h>
 #include <drm/drm_atomic.h>
 #include <linux/virtio_config.h>
 //#include <soc/qcom/boot_stats.h>
@@ -753,11 +754,30 @@ static int virtio_connector_get_mode_info(struct drm_connector *connector,
 			VIRTIO_KMS_ERR("error getting dsc count. rc:%d\n", rc);
 			return rc;
 		}
+
+		/*
+		 * Round up to the nearest supported LM/DSC count (1, 2, 4).
+		 * Width-based DSC calculation can yield unsupported values
+		 * SDE only supports topologies with 1, 2, or 4 LMs —
+		 * round up to the next power of 2 to pick a valid topology.
+		 */
+		if (num_dsc > 0)
+			num_dsc = roundup_pow_of_two(num_dsc);
+
 		if (num_dsc > avail_dp_res.num_dsc) {
-			VIRTIO_KMS_ERR("exceed dsc count %d > %d\n", num_dsc, avail_dp_res.num_dsc);
+			VIRTIO_KMS_ERR("insufficient DSC blocks: need %d avail %d hdisplay=%d\n",
+					num_dsc, avail_dp_res.num_dsc, drm_mode->hdisplay);
 			return -EINVAL;
 		}
+
 		topology->num_lm = max(topology->num_lm, num_dsc);
+
+		if (topology->num_lm > avail_dp_res.num_lm) {
+			VIRTIO_KMS_ERR("insufficient LM blocks: need %d avail %d hdisplay=%d\n",
+					topology->num_lm, avail_dp_res.num_lm, drm_mode->hdisplay);
+			return -EINVAL;
+		}
+
 		topology->num_enc = num_dsc;
 	}
 	/* reset connector lm_mask for every connection event and

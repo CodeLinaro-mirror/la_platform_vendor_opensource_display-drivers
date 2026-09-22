@@ -2055,24 +2055,25 @@ struct topology_name_list {
 	enum sde_rm_topology_name name;
 	char *str;
 } topology_names[] = {
-	{SDE_RM_TOPOLOGY_NONE,					"none"},
-	{SDE_RM_TOPOLOGY_SINGLEPIPE,			"singlepipe"},
-	{SDE_RM_TOPOLOGY_SINGLEPIPE_DSC,		"singlepipe_dsc"},
-	{SDE_RM_TOPOLOGY_SINGLEPIPE_VDC,		"singlepipe_vdc"},
-	{SDE_RM_TOPOLOGY_DUALPIPE,				"dualpipe"},
-	{SDE_RM_TOPOLOGY_DUALPIPE_DSC,			"dualpipe_dsc"},
-	{SDE_RM_TOPOLOGY_DUALPIPE_3DMERGE,		"dualpipemerge"},
-	{SDE_RM_TOPOLOGY_DUALPIPE_3DMERGE_DSC,	"dualpipemerge_dsc"},
-	{SDE_RM_TOPOLOGY_DUALPIPE_3DMERGE_VDC,	"dualpipemerge_vdc"},
-	{SDE_RM_TOPOLOGY_DUALPIPE_DSCMERGE,		"dualpipe_dscmerge"},
-	{SDE_RM_TOPOLOGY_PPSPLIT,				"ppsplit"},
-	{SDE_RM_TOPOLOGY_QUADPIPE_3DMERGE,		"quadpipemerge"},
-	{SDE_RM_TOPOLOGY_QUADPIPE_3DMERGE_DSC,	"quadpipe_3dmerge_dsc"},
-	{SDE_RM_TOPOLOGY_QUADPIPE_DSCMERGE,		"quadpipe_dscmerge"},
-	{SDE_RM_TOPOLOGY_QUADPIPE_DSC4HSMERGE,	"quadpipe_dsc4hsmerge"},
+	{SDE_RM_TOPOLOGY_NONE,                  "none"},
+	{SDE_RM_TOPOLOGY_SINGLEPIPE,            "singlepipe"},
+	{SDE_RM_TOPOLOGY_SINGLEPIPE_DSC,        "singlepipe_dsc"},
+	{SDE_RM_TOPOLOGY_SINGLEPIPE_VDC,        "singlepipe_vdc"},
+	{SDE_RM_TOPOLOGY_DUALPIPE,              "dualpipe"},
+	{SDE_RM_TOPOLOGY_DUALPIPE_DSC,          "dualpipe_dsc"},
+	{SDE_RM_TOPOLOGY_DUALPIPE_3DMERGE,      "dualpipemerge"},
+	{SDE_RM_TOPOLOGY_DUALPIPE_3DMERGE_DSC,  "dualpipemerge_dsc"},
+	{SDE_RM_TOPOLOGY_DUALPIPE_3DMERGE_VDC,  "dualpipemerge_vdc"},
+	{SDE_RM_TOPOLOGY_DUALPIPE_DSCMERGE,     "dualpipe_dscmerge"},
+	{SDE_RM_TOPOLOGY_PPSPLIT,               "ppsplit"},
+	{SDE_RM_TOPOLOGY_QUADPIPE_3DMERGE,      "quadpipemerge"},
+	{SDE_RM_TOPOLOGY_QUADPIPE_3DMERGE_DSC,  "quadpipe_3dmerge_dsc"},
+	{SDE_RM_TOPOLOGY_QUADPIPE_DSCMERGE,     "quadpipe_dscmerge"},
+	{SDE_RM_TOPOLOGY_QUADPIPE_DSC4HSMERGE,  "quadpipe_dsc4hsmerge"},
+	{SDE_RM_TOPOLOGY_QUADPIPE_MERGE,        "quadpipe_merge"},
 	{SDE_RM_TOPOLOGY_DUALPIPE_LOOPBACK,     "dualpipe_loopback"},
 	{SDE_RM_TOPOLOGY_QUADPIPE_LOOPBACK,     "quadpipe_loopback"},
-	{SDE_RM_TOPOLOGY_MAX,     				NULL},
+	{SDE_RM_TOPOLOGY_MAX,                   NULL},
 };
 
 static inline int count_of_ones(u32 data)
@@ -2117,6 +2118,8 @@ static const struct sde_rm_topology_def g_topology_table[SDE_RM_TOPOLOGY_MAX] = 
 			MSM_DISPLAY_COMPRESSION_DSC },
 	{   SDE_RM_TOPOLOGY_QUADPIPE_DSC4HSMERGE, 4, 4, 1, 1, false,
 			MSM_DISPLAY_COMPRESSION_DSC },
+	{   SDE_RM_TOPOLOGY_QUADPIPE_MERGE,       4, 0, 1, 1, false,
+			MSM_DISPLAY_COMPRESSION_NONE },
 	{   SDE_RM_TOPOLOGY_DUALPIPE_LOOPBACK,    2, 0, 0, 0, false,
 			MSM_DISPLAY_COMPRESSION_NONE },
 	{   SDE_RM_TOPOLOGY_QUADPIPE_LOOPBACK,    4, 0, 0, 0, false,
@@ -2152,6 +2155,8 @@ static enum sde_rm_topology_name get_topology_name(struct display_hw_assigment *
 				comp_type == g_topology_table[i].comp_type)
 			return g_topology_table[i].top_name;
 
+	VIRTGPU_VQ_ERR("%s: no match for lm=%d intf=%d comp_enc=%d comp_type=%d\n",
+			__func__, num_lm, num_intf, num_comp_enc, comp_type);
 	return SDE_RM_TOPOLOGY_NONE;
 }
 
