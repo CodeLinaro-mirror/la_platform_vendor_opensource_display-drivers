@@ -2288,6 +2288,87 @@ static u32 *dsi_hfi_pack_freq_patterns(struct dsi_display *display, u32 *total_s
 	return buffer;
 }
 
+/**
+ * dsi_hfi_pack_privacy_regions() - build a single wire payload carrying every
+ * privacy area-mode region's programmable-region tuples.
+ * @priv_info:  the mode's parsed privacy_area_list
+ * @total_size: set to the packed buffer size in bytes, 0 if nothing to send
+ *
+ * Payload layout: [version, region_count,
+ *   (dcs_cmd_type, tuple_count, (cmd_index, offset, len) x tuple_count) x region_count]
+ * Return: heap-allocated buffer (caller must kfree), or NULL if the list is empty.
+ */
+static u32 *dsi_hfi_pack_privacy_regions(struct dsi_display_mode_priv_info *priv_info,
+		u32 *total_size)
+{
+	u32 *buffer, *buffer_ptr;
+	u32 buffer_size;
+	u32 region_count;
+	u32 e;
+
+	*total_size = 0;
+
+	if (!priv_info || !priv_info->privacy_area_list.count ||
+			!priv_info->privacy_area_list.entries)
+		return NULL;
+
+	region_count = priv_info->privacy_area_list.count;
+
+	/* First pass: total buffer size */
+	buffer_size = 2 * sizeof(u32); /* version + region_count */
+	for (e = 0; e < region_count; e++) {
+		struct dsi_privacy_region_info *tuples =
+						&priv_info->privacy_area_list.entries[e].tuples;
+
+		buffer_size += (2 + tuples->count * 3) * sizeof(u32);
+	}
+
+	buffer = kzalloc(buffer_size, GFP_KERNEL);
+	if (!buffer) {
+		DSI_ERR("Failed to allocate %u bytes for privacy regions\n", buffer_size);
+		return NULL;
+	}
+
+	/* Second pass: fill */
+	buffer_ptr = buffer;
+	*buffer_ptr++ = 0; /* version */
+	*buffer_ptr++ = region_count;
+
+	for (e = 0; e < region_count; e++) {
+		struct dsi_privacy_area_entry *entry = &priv_info->privacy_area_list.entries[e];
+		u32 dcs_cmd_type;
+		u32 i;
+
+		/* Guard: region_idx drives enum arithmetic; validate the result
+		 * stays within the valid command type range before use.
+		 * Checking only against DSI_CMD_SET_MAX (not the current last
+		 * REG entry) keeps this future-proof as new REG entries are added.
+		 */
+		dcs_cmd_type = DSI_CMD_SET_PRIVACY_AREA_REG1_ON + entry->region_idx * 2;
+		if (dcs_cmd_type >= DSI_CMD_SET_MAX) {
+			DSI_ERR("privacy region_idx %u produces out-of-range cmd type %u\n",
+					entry->region_idx, dcs_cmd_type);
+			kfree(buffer);
+			*total_size = 0;
+			return NULL;
+		}
+
+		*buffer_ptr++ = dcs_cmd_type;
+		*buffer_ptr++ = entry->tuples.count;
+
+		for (i = 0; i < entry->tuples.count; i++) {
+			*buffer_ptr++ = entry->tuples.region[i].cmd_index;
+			*buffer_ptr++ = entry->tuples.region[i].offset;
+			*buffer_ptr++ = entry->tuples.region[i].len;
+		}
+	}
+
+	*total_size = buffer_size;
+	DSI_DEBUG("Packed %u privacy regions into %u bytes\n", region_count, buffer_size);
+
+	return buffer;
+}
+
 static void dsi_hfi_populate_panel_generic_caps(struct dsi_display *display,
 					struct dsi_panel *panel,
 					struct dsi_panel_generic_caps *panel_generic_caps)
@@ -2549,6 +2630,8 @@ static int dsi_hfi_append_panel_generic_caps(struct hfi_cmdbuf_t *buffer,
 	struct dsi_display_hfi *display_hfi;
 	u32 *freq_patterns = NULL;
 	u32 freq_pattern_size = 0;
+	u32 *privacy_regions = NULL;
+	u32 privacy_regions_size = 0;
 
 	if (!display)
 		return -EINVAL;
@@ -2710,6 +2793,20 @@ static int dsi_hfi_append_panel_generic_caps(struct hfi_cmdbuf_t *buffer,
 		}
 	}
 
+	if (display->modes && display->modes[0].priv_info &&
+			display->modes[0].priv_info->privacy_area_list.count > 0) {
+		privacy_regions = dsi_hfi_pack_privacy_regions(display->modes[0].priv_info,
+				&privacy_regions_size);
+		if (privacy_regions && privacy_regions_size > 0) {
+			hfi_util_kv_helper_add(display_hfi->kv_props,
+					HFI_PACKKEY(HFI_PROPERTY_PANEL_PRIVACY_PROGRAMMABLE_REGION,
+							0,
+							(privacy_regions_size / sizeof(u32))),
+							(void *)privacy_regions);
+			kv_size += privacy_regions_size;
+		}
+	}
+
 	/* Add DSI custom command set info if custom commands are present */
 	if (panel_generic_caps.custom_cmd_set_info[1]) {
 		hfi_util_kv_helper_add(display_hfi->kv_props,
@@ -2746,6 +2843,7 @@ static int dsi_hfi_append_panel_generic_caps(struct hfi_cmdbuf_t *buffer,
 				payload_size);
 
 	kfree(freq_patterns);
+	kfree(privacy_regions);
 
 	if (rc)
 		DSI_ERR("Failed to add caps to buffer, rc = %d", rc);
