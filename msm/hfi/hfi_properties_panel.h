@@ -1150,6 +1150,87 @@
 #define HFI_PROPERTY_PANEL_SPLIT_LINK                                0x0004004E
 
 /*
+ * HFI_PROPERTY_PANEL_PRIVACY_PROGRAMMABLE_REGION - Describes which bytes of
+ *                             each V2 AREA_MODE privacy ON command set are
+ *                             patchable at runtime with the ROI (left, top,
+ *                             right, bottom, corner_radius). Privacy DCS
+ *                             commands are identical across all of a panel's
+ *                             timing modes, so this carries every hardware
+ *                             region's tuples in a single batched payload,
+ *                             sent once as part of
+ *                             HFI_COMMAND_PANEL_INIT_GENERIC_CAPS.
+ *
+ * @PanelInit - HFI_PROPERTY_PANEL_PRIVACY_PROGRAMMABLE_REGION
+ *
+ * Hfi packet layout           | Value
+ *-----------------------------|------------------------------------------
+ *     (u32_key) payload[0]    | HFI_PROPERTY_PANEL_PRIVACY_PROGRAMMABLE_REGION \|
+ * ^                           | (version=0 << 20) \| (dsize=N << 24)
+ *   (u32_value) payload[1]    | version (0)
+ *   (u32_value) payload[2]    | region_count (n)
+ *   (u32_value) payload[3..N] | Variable-length region data (see below)
+ *
+ * Memory Layout Overview:
+ * The payload contains a version field, a region count, and variable-length
+ * region data. Each region consists of 2 fixed u32 fields (its DCS command
+ * type ordinal and tuple count) plus a variable-length array of patchable
+ * byte-range tuples. Below pseudo-code illustrates the memory layout.
+ *
+ * // Top-level structure containing all programmable regions
+ * struct hfi_privacy_programmable_region_info {
+ *     u32 version;                                    // Layout version (0 for current)
+ *     u32 region_count;                               // Number of regions (n)
+ *     struct hfi_privacy_region region[region_count];  // Variable-length region array
+ * };
+ *
+ * // Per-region structure
+ * struct hfi_privacy_region {
+ *     u32 dcs_cmd_type;                               // DCS command type ordinal (see below)
+ *     u32 tuple_count;                                // Number of patchable tuples
+ *     struct hfi_privacy_tuple tuple[tuple_count];    // One entry per patchable byte-range in
+ *                                                      // this region's ON command set (may be
+ *                                                      // >1 if the ROI is embedded redundantly)
+ * };
+ *
+ * // Per-tuple structure -- one patchable byte range within the ON command
+ * struct hfi_privacy_tuple {
+ *     u32 cmd_index;    // index into the ON command set's cmds[] array
+ *     u32 offset;       // byte offset within that command's payload
+ *     u32 len;          // number of bytes to patch (9: L(2)+T(2)+R(2)+B(2)+radius(1))
+ * };
+ *
+ * Below table describes the payload memory layout, which contains a count field
+ * followed by variable-length region data. Each region has 2 fixed fields plus
+ * a variable-length tuple array.
+ *
+ * Payload    |Size           | Value              | Description
+ *------------|---------------|--------------------|-----------
+ * 0          | u32           | version            |Layout version (0 for current format)
+ * 1          | u32           | region_count       |Number of programmable regions (n)
+ * [2..M]     | u32*(M-2)     | region_data        |Variable-length region data. Each region
+ * ^          | ^             | ^                  |consists of 2 fixed u32 fields followed by
+ * ^          | ^             | ^                  |a variable-length array of tuples.
+ * ^          | ^             | ^                  |See region memory layout below.
+ *
+ * Region memory layout (for each region i):
+ *
+ * Field      |Size           | Value          | Description
+ *------------|---------------|----------------|-----------
+ * 0          | u32           | dcs_cmd_type   |Ordinal identifying this region's ON command;
+ * ^          | ^             | ^              |must match the position of the corresponding
+ * ^          | ^             | ^              |command type in both HLOS's and DCP's own,
+ * ^          | ^             | ^              |independently-defined command-set enumerations
+ * 1          | u32           | tuple_count    |Number of patchable byte-ranges (T) within THIS
+ * ^          | ^             | ^              |region's own ON command set -- some panels embed
+ * ^          | ^             | ^              |the ROI redundantly in more than one sub-command
+ * ^          | ^             | ^              |(e.g. a duplicate write), requiring T>1 for that
+ * ^          | ^             | ^              |region even though other regions may need only 1
+ * [2..2+3T-1]| u32*3*T       | tuple          |Variable-length array of (cmd_index, offset, len)
+ * ^          | ^             | ^              |tuples, 3 u32 fields each, where T = tuple_count
+ */
+#define HFI_PROPERTY_PANEL_PRIVACY_PROGRAMMABLE_REGION               0x0004004F
+
+/*
  * All panel property IDs end here
  */
 #define HFI_PROPERTY_PANEL_END                                       0x0004FFFF
