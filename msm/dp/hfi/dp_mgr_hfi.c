@@ -1096,11 +1096,19 @@ static int dp_mgr_hfi_hpd_disconnect_helper(struct dp_mgr_hfi_priv *hfi_priv)
 		return 0;
 	}
 
-	if (!hfi_priv->connected) {
-		DP_INFO("DP already disconnected, ignoring\n");
-		SDE_EVT32_EXTERNAL(SDE_EVTLOG_FUNC_CASE1, hfi_priv->connected);
-		complete_all(&hfi_priv->hpd_comp);
+	if (!hfi_priv->configured) {
+		DP_WARN("DP already cleaned up\n");
 		return 0;
+	}
+
+	if (!hfi_priv->connected) {
+		/* disconnected but still configured */
+		DP_INFO("DP already disconnected. Cleaning up!\n");
+		SDE_EVT32_EXTERNAL(SDE_EVTLOG_FUNC_CASE1, hfi_priv->connected,
+				hfi_priv->configured);
+		complete_all(&hfi_priv->hpd_comp);
+		_aux_switch_enable(hfi_priv, false);
+		goto cleanup;
 	}
 
 	hfi = hfi_priv->hfi[0];
@@ -1110,12 +1118,12 @@ static int dp_mgr_hfi_hpd_disconnect_helper(struct dp_mgr_hfi_priv *hfi_priv)
 	hfi_priv->connected = false;
 	_aux_switch_enable(hfi_priv, false);
 
-
 	if (hfi_priv->audio && hfi_priv->audio_supported)
 		hfi_priv->audio->off(hfi_priv->audio, false);
 
 	_hfi_update_config(hfi_priv, &config);
 	rc = _hfi_send_hot_plug(hfi_priv, &config);
+cleanup:
 	mutex_lock(&hfi_priv->hpd_mutex);
 
 	if (!rc)
@@ -1254,8 +1262,8 @@ int dp_mgr_hfi_hpd_disconnect_cb(void *data)
 		return -EINVAL;
 	}
 
-	if (!hfi_priv->connected) {
-		DP_INFO("DP already disconnected, ignoring\n");
+	if (!hfi_priv->configured) {
+		DP_INFO("DP already cleaned up, ignoring\n");
 		SDE_EVT32_EXTERNAL(SDE_EVTLOG_FUNC_CASE1, hfi_priv->connected);
 		complete_all(&hfi_priv->hpd_comp);
 		return 0;
