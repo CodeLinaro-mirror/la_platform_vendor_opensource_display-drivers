@@ -2319,6 +2319,9 @@ static void dsi_hfi_populate_panel_generic_caps(struct dsi_display *display,
 	panel_generic_caps->panels_lanes_state = dsi_get_panel_lane_state_helper(panel);
 	panel_generic_caps->panel_lane_map = dsi_get_panel_lane_map_helper(panel);
 	panel_generic_caps->tx_eot_append = (u32)(panel->host_config.append_tx_eot);
+	if (panel->host_config.split_link.enabled)
+		panel_generic_caps->split_link_info = BIT(0) |
+			((panel->host_config.split_link.lanes_per_sublink & 0xff) << 8);
 	panel_generic_caps->eof_power_mode = panel->video_config.eof_bllp_lp11_en;
 	panel_generic_caps->bllp_power_mode = panel->video_config.bllp_lp11_en;
 	panel_generic_caps->backlight_ctrl_prim = dsi_get_panel_backlight_type(panel, "primary");
@@ -2601,6 +2604,7 @@ static int dsi_hfi_append_panel_generic_caps(struct hfi_cmdbuf_t *buffer,
 						HFI_PROPERTY_PANEL_SEC_BL_PMIC_CONTROL_TYPE, false},
 		{panel_generic_caps.is_bl_inverted, HFI_PROPERTY_PANEL_BL_INVERTED_DBV, false},
 		{panel_generic_caps.lp11_init, HFI_PROPERTY_PANEL_LP11_INIT, false},
+		{panel_generic_caps.split_link_info, HFI_PROPERTY_PANEL_SPLIT_LINK, false},
 	};
 
 	/* populate properties based on use_default_val flag */
