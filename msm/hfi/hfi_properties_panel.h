@@ -1118,6 +1118,22 @@
 #define HFI_PROPERTY_PANEL_INTRA_FRAME_DCVS_LEVEL                   0x0004004C
 
 /*
+ * HFI_PROPERTY_PANEL_DMA_SCHEDULE_EN - Indicates whether DMA command scheduling
+ *                                       (schedule line/window) values provided by the panel
+ *                                       should be honored as-is, including a value of zero.
+ *                                       When not set/false, DCP falls back to its default
+ *                                       schedule line/window behavior. This property is sent
+ *                                       to DCP as part of HFI_COMMAND_PANEL_INIT_GENERIC_CAPS
+ *                                       command packet payload.
+ *
+ * @PanelInit - HFI_PROPERTY_PANEL_DMA_SCHEDULE_EN
+ *     (u32_key) payload[0]    : HFI_PROPERTY_PANEL_DMA_SCHEDULE_EN |
+ *                               (version=0 << 20) | (dsize=1 << 24 )
+ *   (u32_value) payload[1]    : HFI_TRUE / HFI_FALSE
+ */
+#define HFI_PROPERTY_PANEL_DMA_SCHEDULE_EN                           0x0004004D
+
+/*
  * HFI_PROPERTY_PANEL_SPLIT_LINK - Specifies whether split link is enabled
  *                                 for this panel and, if so, how many lanes
  *                                 belong to each sublink.
