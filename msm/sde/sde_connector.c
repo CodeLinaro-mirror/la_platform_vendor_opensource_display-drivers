@@ -4330,7 +4330,10 @@ int sde_connector_esd_status(struct drm_connector *conn)
 	if (ret <= 0) {
 		/* cancel if any pending esd work */
 		sde_connector_schedule_status_work(conn, false);
-		sde_connector_report_panel_dead(sde_conn, true);
+		if (sde_connector_get_disp_op(conn) == MSM_DISP_OP_HFI)
+			hfi_connector_report_panel_dead(sde_conn, true);
+		else
+			sde_connector_report_panel_dead(sde_conn, true);
 		ret = -ETIMEDOUT;
 	} else {
 		SDE_DEBUG("Successfully received TE from panel\n");
@@ -4381,7 +4384,10 @@ static void sde_connector_check_status_work(struct work_struct *work)
 		return;
 	}
 
-	sde_connector_report_panel_dead(conn, false);
+	if (sde_connector_get_disp_op(&conn->base) == MSM_DISP_OP_HFI)
+		hfi_connector_report_panel_dead(conn, false);
+	else
+		sde_connector_report_panel_dead(conn, false);
 }
 
 static const struct drm_connector_helper_funcs sde_connector_helper_ops = {
