@@ -2323,6 +2323,8 @@ static void dsi_hfi_populate_panel_generic_caps(struct dsi_display *display,
 	panel_generic_caps->backlight_ctrl_prim = dsi_get_panel_backlight_type(panel, "primary");
 	panel_generic_caps->backlight_ctrl_sec = dsi_get_panel_backlight_type(panel, "secondary");
 	panel_generic_caps->is_bl_inverted = panel->bl_config.bl_inverted_dbv;
+	panel_generic_caps->intra_frame_dcvs_level = panel->disable_cesta_hw_sleep ?
+						HFI_INTRA_FRAME_DCVS_OFF : HFI_INTRA_FRAME_DCVS_ON;
 	dsi_get_panel_ctrl_nums_helper(display, panel_generic_caps->ctrl_nums);
 	dsi_get_panel_phy_nums_helper(display, panel_generic_caps->phy_nums);
 
@@ -2717,6 +2719,12 @@ static int dsi_hfi_append_panel_generic_caps(struct hfi_cmdbuf_t *buffer,
 				(sizeof(panel_generic_caps.ulps_supported) / sizeof(u32))),
 				(void *)&panel_generic_caps.ulps_supported);
 	kv_size += sizeof(panel_generic_caps.ulps_supported);
+
+	hfi_util_kv_helper_add(display_hfi->kv_props,
+				HFI_PACKKEY(HFI_PROPERTY_PANEL_INTRA_FRAME_DCVS_LEVEL, 0,
+				(sizeof(panel_generic_caps.intra_frame_dcvs_level) / sizeof(u32))),
+				(void *)&panel_generic_caps.intra_frame_dcvs_level);
+	kv_size += sizeof(panel_generic_caps.intra_frame_dcvs_level);
 
 	kv_count = hfi_util_kv_helper_get_count(display_hfi->kv_props);
 
