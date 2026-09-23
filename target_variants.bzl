@@ -15,6 +15,7 @@ targets = [
     "sun",
     "vienna",
     "x1p42100",
+    "waipio",
 ]
 
 la_variants = [
