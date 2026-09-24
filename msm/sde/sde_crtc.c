@@ -458,6 +458,12 @@ static int _sde_crtc_check_modeset_dnsc_blur(struct drm_crtc *crtc,
 	for (i = 0; i < cstate->num_connectors; i++) {
 		conn = cstate->connectors[i];
 		conn_state = drm_atomic_get_new_connector_state(crtc_state->state, conn);
+		if (!conn_state) {
+			SDE_DEBUG("no new connector state found for conn %d skipping\n",
+				conn->base.id);
+			continue;
+		}
+
 		sde_conn_state = to_sde_connector_state(conn_state);
 		msm_mode = &sde_conn_state->msm_mode;
 
@@ -6832,6 +6838,36 @@ static void sde_crtc_power_event_cb(void *data, u32 event)
 	sde_crtc_handle_power_event(event, crtc);
 }
 
+void sde_crtc_register_power_event_cb(struct drm_crtc *crtc, bool enable)
+{
+	struct msm_drm_private *priv;
+	struct drm_encoder *encoder;
+	struct sde_crtc *sde_crtc;
+
+	if (!crtc || !crtc->dev || !crtc->dev->dev_private) {
+		SDE_ERROR("invalid params\n");
+		return;
+	}
+
+	sde_crtc = to_sde_crtc(crtc);
+
+	priv = crtc->dev->dev_private;
+	if (!IS_DISP_OP_HFI(priv->disp_op))
+		return;
+
+	drm_for_each_encoder_mask(encoder, crtc->dev, sde_crtc->cached_encoder_mask) {
+		if (sde_encoder_in_clone_mode(encoder))
+			continue;
+
+		if (enable)
+			sde_encoder_register_display_power_event_callback(encoder,
+					sde_crtc_power_event_cb, crtc);
+		else
+			sde_encoder_register_display_power_event_callback(encoder,
+					NULL, NULL);
+	}
+}
+
 static void _sde_crtc_reset(struct drm_crtc *crtc)
 {
 	struct sde_crtc *sde_crtc = to_sde_crtc(crtc);
@@ -6868,6 +6904,7 @@ static void sde_crtc_disable(struct drm_crtc *crtc)
 	enum sde_intf_mode intf_mode;
 	struct sde_hw_ctl *hw_ctl = NULL;
 	u32 encoder_mask = 0;
+
 	if (!crtc || !crtc->dev || !crtc->dev->dev_private || !crtc->state) {
 		SDE_ERROR("invalid crtc\n");
 		return;
@@ -7266,6 +7303,22 @@ static void sde_crtc_enable(struct drm_crtc *crtc,
 	sde_cp_crtc_enable(crtc);
 	/* update color processing on resume */
 	sde_cp_crtc_resume(crtc);
+
+	if (IS_DISP_OP_HFI(priv->disp_op) && sde_crtc->hw_events_ssr_recovery_pending) {
+		int marked_events, resynced_events;
+
+		marked_events = hfi_crtc_mark_hw_events_pending_from_user_events(sde_crtc);
+		resynced_events = hfi_crtc_try_resync_hw_events(sde_crtc);
+		if (resynced_events < 0) {
+			SDE_ERROR("crtc:%d failed to restore pending hw events marked:%d rc:%d\n",
+					DRMID(crtc), marked_events, resynced_events);
+		} else {
+			SDE_DEBUG("crtc:%d restored hw events on enable marked:%d resynced:%d\n",
+					DRMID(crtc), marked_events, resynced_events);
+		}
+
+		sde_crtc->hw_events_ssr_recovery_pending = hfi_crtc_has_pending_hw_events(sde_crtc);
+	}
 
 	mutex_unlock(&sde_crtc->crtc_lock);
 

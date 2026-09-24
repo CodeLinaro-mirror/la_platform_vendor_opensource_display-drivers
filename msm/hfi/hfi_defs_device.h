@@ -56,7 +56,8 @@
  *     - Signals interrupt or attention events from the connected device
  *     - For DP: Indicates HPD IRQ pulse (short pulse vs. long pulse)
  *     - Used to trigger EDID re-read, capability negotiation, or link training
- *     - Values: 0 = no IRQ, 1 = IRQ/attention signal present
+ *     - Values: BIT(0): 0 = no IRQ, 1 = IRQ/attention signal present
+ *               BIT(1): 0 = no psm, 1 = psm enabled
  */
 struct hfi_device_hotplug_config {
 	u32 orientation;
@@ -187,6 +188,46 @@ struct hfi_device_ssr_info {
 struct hfi_device_active_layers_info {
 	u32 display_id;
 	u32 layers_mask;
+};
+
+/*!
+ * @enum hfi_ddr_type
+ * @brief DDR device type values communicated over HFI.
+ *
+ * DDR type property.
+ *
+ * @var HFI_DDR_TYPE_NODDR
+ *   No DDR type.
+ * @var HFI_DDR_TYPE_LPDDR1
+ *   LPDDR1 memory type.
+ * @var HFI_DDR_TYPE_LPDDR2
+ *   LPDDR2 memory type.
+ * @var HFI_DDR_TYPE_PCDDR2
+ *   PCDDR2 memory type.
+ * @var HFI_DDR_TYPE_PCDDR3
+ *   PCDDR3 memory type.
+ * @var HFI_DDR_TYPE_LPDDR3
+ *   LPDDR3 memory type.
+ * @var HFI_DDR_TYPE_LPDDR4
+ *   LPDDR4 memory type.
+ * @var HFI_DDR_TYPE_LPDDR4X
+ *   LPDDR4X memory type.
+ * @var HFI_DDR_TYPE_LPDDR5
+ *   LPDDR5 memory type.
+ * @var HFI_DDR_TYPE_LPDDR5X
+ *   LPDDR5X memory type.
+ */
+enum hfi_device_ddr_type {
+	HFI_DDR_TYPE_NODDR = 0,
+	HFI_DDR_TYPE_LPDDR1 = 1,
+	HFI_DDR_TYPE_LPDDR2 = 2,
+	HFI_DDR_TYPE_PCDDR2 = 3,
+	HFI_DDR_TYPE_PCDDR3 = 4,
+	HFI_DDR_TYPE_LPDDR3 = 5,
+	HFI_DDR_TYPE_LPDDR4 = 6,
+	HFI_DDR_TYPE_LPDDR4X = 7,
+	HFI_DDR_TYPE_LPDDR5 = 8,
+	HFI_DDR_TYPE_LPDDR5X = 9,
 };
 
 #endif // __H_HFI_DEFS_DEVICE_H__
