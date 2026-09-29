@@ -85,13 +85,26 @@ static int hfi_dbg_parse_payload(void *payload, u32 size)
 	return ret;
 }
 
-static void hfi_dbg_property_handler(u32 display_id, u32 cmd_id,
-		void *payload, u32 size, struct hfi_prop_listener *listener)
+static void hfi_dbg_property_handler(struct hfi_packet_info *packet_info,
+		struct hfi_prop_listener *listener)
 {
+	u32 cmd_id;
+	void *payload;
+	u32 size;
+
+	if (!packet_info) {
+		SDE_ERROR("invalid packet_info\n");
+		return;
+	}
+
 	if (!hfi_dbg) {
 		SDE_ERROR("invalid object or listener from FW\n");
 		return;
 	}
+
+	cmd_id = packet_info->cmd;
+	payload = packet_info->payload_ptr;
+	size = packet_info->payload_size;
 
 	if (cmd_id == HFI_COMMAND_DEBUG_INIT && payload)
 		hfi_dbg_parse_payload(payload, size);
@@ -243,7 +256,7 @@ static void hfi_dbg_add_va_region(void)
 			hfi_dbg->buff_map.dbg_bus_addr.local_addr);
 }
 #else
-void hfi_dbg_add_va_region(void)
+static void hfi_dbg_add_va_region(void)
 {
 
 }
@@ -498,6 +511,11 @@ void hfi_dbg_destroy(void)
 		return;
 	}
 	pdev = to_platform_device(dev);
+
+	if (!pdev) {
+		SDE_ERROR("Invalid platform device\n");
+		return;
+	}
 	ddev = platform_get_drvdata(pdev);
 
 	if (!ddev || !ddev->dev_private) {
