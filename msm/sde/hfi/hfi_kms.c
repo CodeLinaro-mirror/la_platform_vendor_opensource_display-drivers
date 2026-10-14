@@ -17,6 +17,8 @@
 #include "hfi_utils.h"
 #include "hfi_defs_debug.h"
 #include "hfi_dbg.h"
+#include "hfi_color_proc.h"
+#include <soc/qcom/of_common.h>
 
 #define DWORDS_TO_BYTES(x) (x * 4)
 #define BYTES_TO_DWORDS(x) (x / 4)
@@ -35,6 +37,8 @@
 #define MIN_BYTES_FOR_PIPE_CAPS(x) DWORDS_TO_BYTES(1 + x[0] +  1)
 
 #define MAX_DEBUG_FEATURES 2
+
+#define HFI_DEVICE_BASE_PROP_MAX_SIZE 1024
 
 static u32 _hfi_kms_read_lsr_init_caps(struct hfi_catalog_base *catalog,
 		u32 hfi_prop, u32 *payload, u32 max_words);
@@ -471,12 +475,10 @@ static int hfi_kms_commit(struct sde_kms *kms,
 	int i, ret = 0;
 	struct drm_crtc *crtc;
 	struct drm_crtc_state *crtc_state;
-	struct hfi_kms *hfi_kms;
 
 	if (!kms || !state)
 		return -EINVAL;
 
-	hfi_kms = to_hfi_kms(kms);
 	for_each_new_crtc_in_state(state, crtc, crtc_state, i) {
 		if (crtc->state->active || crtc_state->active) {
 			SDE_DEBUG(" crtc:%d\n", DRMID(crtc));
@@ -524,6 +526,35 @@ static void _wake_up_all_kickoff_wq(struct sde_kms *sde_kms)
 			continue;
 
 		wake_up_all(&hfi_enc->pending_kickoff_wq);
+	}
+}
+
+static void _hfi_kms_process_cp_ssr(struct hfi_kms *hfi_kms, bool ssr_start)
+{
+	struct drm_crtc *drm_crtc;
+	struct sde_crtc *sde_crtc;
+	int rc;
+
+	if (!hfi_kms || !hfi_kms->base || !hfi_kms->base->dev)
+		return;
+
+	drm_for_each_crtc(drm_crtc, hfi_kms->base->dev) {
+		sde_crtc = to_sde_crtc(drm_crtc);
+		if (!sde_crtc)
+			continue;
+
+		if (ssr_start) {
+			rc = hfi_cp_crtc_handle_ssr_start(sde_crtc);
+			if (rc)
+				SDE_ERROR("crtc:%d CP SSR start cleanup failed rc:%d\n",
+					DRMID(drm_crtc), rc);
+			continue;
+		}
+
+		rc = hfi_cp_crtc_handle_ssr_end(sde_crtc);
+		if (rc)
+			SDE_ERROR("crtc:%d CP SSR end restore failed rc:%d\n",
+				DRMID(drm_crtc), rc);
 	}
 }
 
@@ -603,6 +634,7 @@ static int _hfi_kms_process_ssr_start(struct hfi_client_t *hfi_client)
 
 	atomic_set(&hfi_kms->ssr_in_progress, 1);
 	_wake_up_all_kickoff_wq(sde_kms);
+	_hfi_kms_process_cp_ssr(hfi_kms, true);
 
 	SDE_DEBUG("process ssr start called\n");
 
@@ -705,6 +737,8 @@ static int _hfi_kms_process_ssr_end(struct hfi_client_t *hfi_client)
 		SDE_ERROR("failed lut dma configuration rc=%d\n", rc);
 		return rc;
 	}
+
+	_hfi_kms_process_cp_ssr(hfi_kms, false);
 
 	/* Disable MMCX vote for HLOS driver */
 	rc = msm_dss_enable_vreg(mp->vreg_config, mp->num_vreg, false);
@@ -1430,6 +1464,55 @@ fail:
 		return 0;
 	}
 	return -EINVAL;
+}
+
+int hfi_kms_send_generic_device_caps(struct hfi_kms *hfi_kms)
+{
+	struct hfi_cmdbuf_t *cmd_buf;
+	struct hfi_util_u32_prop_helper *props;
+	u32 device_id;
+	u32 ddr_type;
+	int ret;
+
+	ddr_type = (u32)of_fdt_get_ddrtype();
+
+	device_id = sde_in_trusted_vm(hfi_kms->base) ? MSM_DRV_HFI_SEC_ID : MSM_DRV_HFI_ID;
+	cmd_buf = hfi_adapter_get_cmd_buf(&hfi_kms->hfi_client,
+			device_id, HFI_CMDBUF_TYPE_DEVICE_INFO);
+	if (!cmd_buf) {
+		SDE_ERROR("failed to get hfi command buffer\n");
+		return -EINVAL;
+	}
+
+	props = hfi_util_u32_prop_helper_alloc(HFI_DEVICE_BASE_PROP_MAX_SIZE);
+	if (!props) {
+		SDE_ERROR("failed to alloc prop helper\n");
+		return -ENOMEM;
+	}
+
+	hfi_util_u32_prop_helper_reset(props);
+	hfi_util_u32_prop_helper_add_prop(props,
+			HFI_PROPERTY_DEVICE_GENERIC_CAPS_DDR_TYPE,
+			HFI_VAL_U32, &ddr_type, sizeof(u32));
+
+	ret = hfi_adapter_add_set_property(&hfi_kms->hfi_client, cmd_buf,
+			HFI_COMMAND_DEVICE_GENERIC_CAPS, device_id,
+			HFI_PAYLOAD_TYPE_U32_ARRAY,
+			hfi_util_u32_prop_helper_get_payload_addr(props),
+			hfi_util_u32_prop_helper_get_size(props),
+			HFI_HOST_FLAGS_NON_DISCARDABLE);
+	if (ret) {
+		SDE_ERROR("failed to add generic device caps command\n");
+		goto exit;
+	}
+
+	ret = hfi_adapter_set_cmd_buf(&hfi_kms->hfi_client, cmd_buf);
+	if (ret)
+		SDE_ERROR("failed to send generic device caps command\n");
+
+exit:
+	kfree(props);
+	return ret;
 }
 
 int hfi_kms_get_catalog_data(struct hfi_kms *hfi_kms)

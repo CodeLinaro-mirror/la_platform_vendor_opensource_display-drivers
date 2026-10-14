@@ -122,6 +122,7 @@ struct dp_mgr_hfi_priv {
 	struct work_struct configure_work;
 	struct work_struct attention_work;
 	struct work_struct connect_work;
+	struct work_struct reconnect_work;
 
 	struct dp_aux_switch *aux_switch;
 	struct dp_display_mode default_mode;
@@ -172,8 +173,8 @@ struct dp_mgr_hfi_priv {
 	/* TUI state */
 	bool tui_active;
 
-	/* Set once panel generic caps have been sent to DCP */
-	bool generic_caps_sent;
+	/* Set once panel init is complete and generic caps have been sent to DCP*/
+	bool panel_init;
 };
 
 int dp_mgr_hfi_send_audio_config(struct dp_client *client,

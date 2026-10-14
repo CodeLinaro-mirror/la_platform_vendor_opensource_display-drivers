@@ -27,10 +27,13 @@
 #include <linux/of_irq.h>
 #include <linux/dma-buf.h>
 #include <linux/memblock.h>
+#include <linux/mm.h>
+#include <linux/scatterlist.h>
 #include <linux/soc/qcom/panel_event_notifier.h>
 #include <drm/drm_atomic_uapi.h>
 #include <drm/drm_probe_helper.h>
 #include <linux/version.h>
+#include <linux/suspend.h>
 #include <linux/sde_io_util.h>
 
 #include "msm_drv.h"
@@ -140,6 +143,11 @@ static int _sde_kms_mmu_init(struct sde_kms *sde_kms);
 static int _sde_kms_register_events(struct msm_kms *kms,
 		struct drm_mode_object *obj, u32 event, bool en);
 static void sde_kms_handle_power_event(u32 event_type, void *usr);
+
+#if IS_ENABLED(CONFIG_HIBERNATION) || IS_ENABLED(CONFIG_DEEPSLEEP)
+static int sde_kms_pm_freeze(struct device *dev);
+static int sde_kms_pm_restore(struct device *dev);
+#endif
 
 inline enum msm_disp_op sde_kms_get_disp_op(struct sde_kms *sde_kms)
 {
@@ -1105,6 +1113,54 @@ static void _sde_kms_parse_lpai_region(struct sde_kms *sde_kms)
 			sde_kms->lpai_buf_base, sde_kms->lpai_buf_size);
 }
 
+/* Grant ADSP/LPASS shared RW access to the lpai_display_region */
+static int _sde_kms_hyp_assign_lpai_region(struct sde_kms *sde_kms)
+{
+	struct page     *page;
+	struct sg_table  sgt;
+	int              ret;
+
+	if (!sde_kms->lpai_buf_base || !sde_kms->lpai_buf_size)
+		return 0;
+
+	if (!PAGE_ALIGNED(sde_kms->lpai_buf_base) || !PAGE_ALIGNED(sde_kms->lpai_buf_size))
+		return -EINVAL;
+
+	page = phys_to_page(sde_kms->lpai_buf_base);
+	if (!page)
+		return -EINVAL;
+
+	ret = sg_alloc_table(&sgt, 1, GFP_KERNEL);
+	if (ret)
+		return ret;
+	sg_set_page(sgt.sgl, page, sde_kms->lpai_buf_size, 0);
+
+#if IS_ENABLED(CONFIG_QCOM_SECURE_BUFFER)
+	{
+		u32 src_vmids[]  = { VMID_HLOS };
+		int dst_vmids[]  = { VMID_LPASS, VMID_ADSP_HEAP, VMID_HLOS };
+		int dst_perms[]  = { PERM_READ | PERM_WRITE,
+				     PERM_READ | PERM_WRITE,
+				     PERM_READ | PERM_WRITE };
+
+		ret = hyp_assign_table(&sgt,
+					src_vmids, ARRAY_SIZE(src_vmids),
+					dst_vmids, dst_perms, ARRAY_SIZE(dst_vmids));
+	}
+#else
+	ret = -ENODEV;
+#endif
+
+	sde_kms->lpai_hyp_assigned = (ret == 0);
+	sg_free_table(&sgt);
+
+	SDE_DEBUG("LPAI hyp_assign: base=0x%lx size=0x%x %s ret=%d\n",
+		  sde_kms->lpai_buf_base, sde_kms->lpai_buf_size,
+		  ret ? "FAILED" : "SUCCESS", ret);
+
+	return ret;
+}
+
 static int _sde_kms_get_blank(struct drm_crtc_state *crtc_state,
 		struct drm_connector_state *conn_state)
 {
@@ -1143,7 +1199,7 @@ static void _sde_kms_drm_check_dpms(struct drm_atomic_state *old_state,
 	struct drm_crtc *crtc;
 	struct sde_connector *c_conn;
 	struct sde_encoder_virt *sde_enc;
-	int i, old_mode, new_mode, old_fps, new_fps;
+	int i, old_mode, new_mode, old_fps, new_fps, old_lp_mode, new_lp_mode;
 	enum panel_event_notifier_tag panel_type;
 
 	for_each_old_connector_in_state(old_state, connector,
@@ -1155,6 +1211,8 @@ static void _sde_kms_drm_check_dpms(struct drm_atomic_state *old_state,
 
 		new_fps = drm_mode_vrefresh(&crtc->state->mode);
 		new_mode = _sde_kms_get_blank(crtc->state, connector->state);
+		new_lp_mode = sde_connector_get_property(connector->state,
+								CONNECTOR_PROP_LP);
 
 		if (old_conn_state->crtc) {
 #if (KERNEL_VERSION(6, 19, 0) <= LINUX_VERSION_CODE)
@@ -1168,14 +1226,17 @@ static void _sde_kms_drm_check_dpms(struct drm_atomic_state *old_state,
 			old_fps = drm_mode_vrefresh(&old_crtc_state->mode);
 			old_mode = _sde_kms_get_blank(old_crtc_state,
 							old_conn_state);
+			old_lp_mode = sde_connector_get_property(old_conn_state,
+								CONNECTOR_PROP_LP);
 		} else {
 			old_fps = 0;
 			old_mode = DRM_PANEL_EVENT_BLANK;
 		}
 
-		if ((old_mode != new_mode) || (old_fps != new_fps)) {
+		if ((old_mode != new_mode) || (old_fps != new_fps)
+				|| (old_lp_mode != new_lp_mode)) {
 			c_conn = to_sde_connector(connector);
-			SDE_EVT32(old_mode, new_mode, old_fps, new_fps,
+			SDE_EVT32(old_mode, new_mode, old_fps, new_fps, old_lp_mode, new_lp_mode,
 				c_conn->panel, crtc->state->active,
 				old_conn_state->crtc);
 			pr_debug("change detected for connector:%s (power mode %d->%d, fps %d->%d)\n",
@@ -2999,6 +3060,12 @@ static int sde_kms_hfi_boot_init(struct sde_kms *sde_kms)
 	ret = hfi_kms_get_catalog_data(sde_kms->hfi_kms);
 	if (ret) {
 		SDE_ERROR("HFI get catalog data failed\n");
+		return -EPROBE_DEFER;
+	}
+
+	ret = hfi_kms_send_generic_device_caps(sde_kms->hfi_kms);
+	if (ret) {
+		SDE_ERROR("HFI send generic device caps failed\n");
 		return -EPROBE_DEFER;
 	}
 
@@ -5549,6 +5616,7 @@ int sde_kms_suspend_helper(struct sde_kms *sde_kms)
 	struct drm_encoder *enc;
 	struct drm_connector_list_iter conn_iter;
 	struct drm_atomic_state *state = NULL;
+	struct sde_encoder_virt *sde_enc;
 	int ret = 0, num_crtcs = 0;
 
 	if (!sde_kms || !sde_kms->dev)
@@ -5581,6 +5649,11 @@ int sde_kms_suspend_helper(struct sde_kms *sde_kms)
 			SDE_EVT32(DRMID(enc), SDE_EVTLOG_FUNC_CASE1, SDE_EVTLOG_FUNC_EXIT);
 			return -EINVAL;
 		}
+	}
+	drm_for_each_encoder(enc, ddev) {
+		sde_enc = to_sde_encoder_virt(enc);
+		if (sde_enc->crtc)
+			sde_crtc_register_power_event_cb(sde_enc->crtc, false);
 	}
 
 	/* acquire modeset lock(s) */
@@ -5716,7 +5789,11 @@ static int sde_kms_pm_suspend(struct device *dev)
 	struct drm_device *ddev;
 	struct sde_kms *sde_kms;
 	int ret = 0;
-
+#if IS_ENABLED(CONFIG_DEEPSLEEP)
+	if (pm_suspend_target_state == PM_SUSPEND_MEM) {
+		return sde_kms_pm_freeze(dev);
+	}
+#endif
 	if (!dev)
 		return -EINVAL;
 
@@ -5734,7 +5811,7 @@ static int sde_kms_pm_suspend(struct device *dev)
 	return ret;
 }
 
-#if IS_ENABLED(CONFIG_HIBERNATION)
+#if IS_ENABLED(CONFIG_HIBERNATION) || IS_ENABLED(CONFIG_DEEPSLEEP)
 static int sde_kms_freeze_helper(struct sde_kms *sde_kms)
 {
 	struct drm_device *ddev;
@@ -5743,6 +5820,7 @@ static int sde_kms_freeze_helper(struct sde_kms *sde_kms)
 	struct drm_encoder *enc;
 	struct drm_connector_list_iter conn_iter;
 	struct drm_atomic_state *state = NULL;
+	struct sde_encoder_virt *sde_enc;
 	int ret = 0, num_crtcs = 0;
 
 	if (!sde_kms || !sde_kms->dev)
@@ -5773,6 +5851,11 @@ static int sde_kms_freeze_helper(struct sde_kms *sde_kms)
 		}
 	}
 
+	drm_for_each_encoder(enc, ddev) {
+		sde_enc = to_sde_encoder_virt(enc);
+		if (sde_enc->crtc)
+			sde_crtc_register_power_event_cb(sde_enc->crtc, false);
+	}
 	/* acquire modeset lock(s) */
 	drm_modeset_acquire_init(&ctx, 0);
 
@@ -6015,6 +6098,12 @@ static int sde_kms_pm_restore(struct device *dev)
 		return ret;
 	}
 
+	ret = hfi_kms_send_generic_device_caps(hfi_kms);
+	if (ret) {
+		SDE_ERROR("failed to send generic device caps, ret: %d\n", ret);
+		return ret;
+	}
+
 	/* Configure trace settings */
 	ret = hfi_kms_send_trace_cfg(hfi_kms, HFI_TRUE);
 	if (ret) {
@@ -6058,7 +6147,7 @@ static int sde_kms_pm_restore(struct device *dev)
 
 	return ret;
 }
-#endif /* CONFIG_HIBERNATION */
+#endif /* CONFIG_HIBERNATION || CONFIG_DEEPSLEEP */
 
 int sde_kms_resume_helper(struct sde_kms *sde_kms)
 {
@@ -6068,6 +6157,7 @@ int sde_kms_resume_helper(struct sde_kms *sde_kms)
 	struct sde_crtc *sde_crtc;
 	struct drm_modeset_acquire_ctx ctx;
 	int ret, i;
+	struct sde_encoder_virt *sde_enc;
 
 	if (!sde_kms || !sde_kms->dev)
 		return -EINVAL;
@@ -6127,6 +6217,12 @@ retry:
 
 		drm_atomic_state_put(sde_kms->suspend_state);
 		sde_kms->suspend_state = NULL;
+
+		drm_for_each_encoder(enc, ddev) {
+			sde_enc = to_sde_encoder_virt(enc);
+			if (sde_enc->crtc)
+				sde_crtc_register_power_event_cb(sde_enc->crtc, true);
+		}
 	}
 
 end:
@@ -6145,6 +6241,11 @@ static int sde_kms_pm_resume(struct device *dev)
 	struct sde_kms *sde_kms;
 	int ret;
 
+#if IS_ENABLED(CONFIG_DEEPSLEEP)
+	if (pm_suspend_target_state == PM_SUSPEND_MEM) {
+		return sde_kms_pm_restore(dev);
+	}
+#endif
 	if (!dev)
 		return -EINVAL;
 
@@ -6186,10 +6287,10 @@ static const struct msm_kms_funcs kms_funcs = {
 	.display_early_ept_hint = sde_kms_display_early_ept_hint,
 	.pm_suspend      = sde_kms_pm_suspend,
 	.pm_resume       = sde_kms_pm_resume,
-#if IS_ENABLED(CONFIG_HIBERNATION)
+#if IS_ENABLED(CONFIG_HIBERNATION) || IS_ENABLED(CONFIG_DEEPSLEEP)
 	.pm_freeze      = sde_kms_pm_freeze,
 	.pm_restore       = sde_kms_pm_restore,
-#endif
+#endif /* CONFIG_HIBERNATION || CONFIG_DEEPSLEEP */
 	.destroy         = sde_kms_destroy,
 	.debugfs_destroy = sde_kms_debugfs_destroy,
 	.cont_splash_config = sde_kms_cont_splash_config,
@@ -6527,6 +6628,16 @@ static int sde_kms_pd_enable(struct generic_pm_domain *genpd)
 	int rc = -EINVAL;
 
 	SDE_DEBUG("\n");
+	// if disable_depth > 0, we can skip calling pm_runtime_get_sync()
+	if (sde_kms->dev->dev->power.disable_depth > 0) {
+		SDE_DEBUG("disable_depth=%d, defer pd_enable\n",
+			sde_kms->dev->dev->power.disable_depth);
+		SDE_EVT32(rc, genpd->device_count,
+			atomic_read(&sde_kms->dev->dev->power.usage_count),
+			atomic_read(&sde_kms->pd_enable_count),
+			pm_runtime_suspended(sde_kms->dev->dev));
+		return rc;
+	}
 
 	rc = pm_runtime_get_sync(sde_kms->dev->dev);
 	if (rc < 0) {
@@ -6539,8 +6650,9 @@ static int sde_kms_pd_enable(struct generic_pm_domain *genpd)
 	}
 	rc = (rc > 0) ? 0 : rc;
 
+	atomic_inc(&sde_kms->pd_enable_count);
 	SDE_EVT32(rc, genpd->device_count, atomic_read(&sde_kms->dev->dev->power.usage_count),
-		pm_runtime_suspended(sde_kms->dev->dev));
+		pm_runtime_suspended(sde_kms->dev->dev), atomic_read(&sde_kms->pd_enable_count));
 
 	return rc;
 }
@@ -6550,6 +6662,19 @@ static int sde_kms_pd_disable(struct generic_pm_domain *genpd)
 	struct sde_kms *sde_kms = genpd_to_sde_kms(genpd);
 
 	SDE_DEBUG("\n");
+
+	// if pd_enable_count <= 0, then we can skip pm_runtime_put_sync()
+	if (atomic_dec_return(&sde_kms->pd_enable_count) < 0) {
+		SDE_EVT32(genpd->device_count, atomic_read(&sde_kms->dev->dev->power.usage_count),
+			pm_runtime_suspended(sde_kms->dev->dev));
+		atomic_inc(&sde_kms->pd_enable_count);
+		SDE_DEBUG("device_count=%d, usage_count=%d, pd_enable_count=%d,\
+			runtime-suspend=%d\n", genpd->device_count,
+			atomic_read(&sde_kms->dev->dev->power.usage_count),
+			atomic_read(&sde_kms->pd_enable_count),
+			pm_runtime_suspended(sde_kms->dev->dev));
+		return -EINVAL;
+	}
 
 	pm_runtime_put_sync(sde_kms->dev->dev);
 
@@ -6862,8 +6987,13 @@ static int _sde_kms_hw_init_rm(struct sde_kms *sde_kms, struct msm_drm_private *
 
 		for (i = 0; i < display_count; i++) {
 			display = &sde_kms->splash_data.splash_display[i];
-			if (IS_DISP_OP_HFI(priv->disp_op))
-				display->cont_splash_enabled = true;
+			if (IS_DISP_OP_HFI(priv->disp_op) &&
+				sde_kms->hfi_kms && sde_kms->hfi_kms->catalog) {
+				struct hfi_catalog_base *catalog = sde_kms->hfi_kms->catalog;
+				unsigned int pipes_mask = catalog->active_pipes_mask[i];
+				display->cont_splash_enabled = pipes_mask ? true : false;
+			}
+
 			/*
 			 * free splash region on resource init failure and
 			 * cont-splash disabled case
@@ -6915,6 +7045,7 @@ static int _sde_kms_hw_init_power_helper(struct drm_device *dev,
 		}
 
 		sde_kms->genpd_init = true;
+		atomic_set(&sde_kms->pd_enable_count, 0);
 		SDE_DEBUG("added genpd provider %s\n", sde_kms->genpd.name);
 	}
 
@@ -7182,6 +7313,9 @@ static int sde_kms_hw_init(struct msm_kms *kms)
 		SDE_DEBUG("sde splash data fetch failed: %d\n", rc);
 
 	_sde_kms_parse_lpai_region(sde_kms);
+
+	if (sde_kms->lpai_buf_base)
+		_sde_kms_hyp_assign_lpai_region(sde_kms);
 
 	rc = _sde_kms_hw_init_blocks(sde_kms, dev, priv);
 	if (rc)

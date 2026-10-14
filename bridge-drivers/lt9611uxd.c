@@ -27,6 +27,7 @@
 #include <linux/of_irq.h>
 #include <linux/of_platform.h>
 #include <linux/firmware.h>
+#include <linux/pinctrl/consumer.h>
 #include <linux/hdmi.h>
 #include <drm/drm_print.h>
 #include <drm/drm_atomic.h>
@@ -122,6 +123,9 @@ struct lt9611uxd {
 	u32 irq_gpio;
 	u32 reset_gpio;
 	u32 hdmi_en_gpio;
+
+	struct pinctrl *pinctrl;
+	struct pinctrl_state *pinctrl_active;
 
 	bool hdmi_power_on;
 
@@ -566,7 +570,7 @@ end:
 }
 
 
-void lt9611uxd_helper_read_edid(struct lt9611uxd *pdata)
+static void lt9611uxd_helper_read_edid(struct lt9611uxd *pdata)
 {
 	int ret;
 
@@ -616,7 +620,7 @@ void lt9611uxd_helper_read_edid(struct lt9611uxd *pdata)
 	}
 }
 
-int lt9611uxd_read_hpd_status(struct lt9611uxd *pdata)
+static int lt9611uxd_read_hpd_status(struct lt9611uxd *pdata)
 {
 	u8 conn_status = connector_status_disconnected;
 	u8 get_hpd_status_cmd[5] = {0x52, 0x48, 0x31, 0x3A, 0x00};
@@ -629,7 +633,7 @@ int lt9611uxd_read_hpd_status(struct lt9611uxd *pdata)
 	return conn_status;
 }
 
-void lt9611uxd_edid_work(struct work_struct *work)
+static void lt9611uxd_edid_work(struct work_struct *work)
 {
 	struct lt9611uxd *pdata = container_of(work, struct lt9611uxd, edid_work);
 
@@ -639,7 +643,7 @@ void lt9611uxd_edid_work(struct work_struct *work)
 	lt9611uxd_helper_read_edid(pdata);
 }
 
-void lt9611uxd_hpd_work(struct work_struct *work)
+static void lt9611uxd_hpd_work(struct work_struct *work)
 {
 	char name[32], status[32];
 	char *envp[5];
@@ -902,7 +906,7 @@ static int lt9611uxd_get_mute(struct snd_kcontrol *kcontrol,
 		struct snd_ctl_elem_value *ucontrol)
 {
 	struct snd_soc_component *component =
-		snd_soc_kcontrol_component(kcontrol);
+		(struct snd_soc_component *)snd_kcontrol_chip(kcontrol);
 	struct lt9611uxd *priv = snd_soc_component_get_drvdata(component);
 
 	ucontrol->value.integer.value[0] = priv->mute;
@@ -913,7 +917,7 @@ static int lt9611uxd_put_mute(struct snd_kcontrol *kcontrol,
 		struct snd_ctl_elem_value *ucontrol)
 {
 	struct snd_soc_component *component =
-		snd_soc_kcontrol_component(kcontrol);
+		(struct snd_soc_component *)snd_kcontrol_chip(kcontrol);
 	struct lt9611uxd *priv = snd_soc_component_get_drvdata(component);
 
 	lt9611uxd_i2c_mute(priv, ucontrol->value.integer.value[0]);
@@ -1152,7 +1156,7 @@ static int lt9611uxd_select_port(struct lt9611uxd *pdata, int port_select)
 	return 0;
 }
 
-unsigned int BitsReverse(u32 inVal, u8 bits)
+static unsigned int BitsReverse(u32 inVal, u8 bits)
 {
 	u32 outVal = 0;
 	u8 i;
@@ -1165,7 +1169,7 @@ unsigned int BitsReverse(u32 inVal, u8 bits)
 	return outVal;
 }
 
-unsigned int GetCRC(struct CrcInfoTypeS type, const  u8 *buf, u64 bufLen)
+static unsigned int GetCRC(struct CrcInfoTypeS type, const  u8 *buf, u64 bufLen)
 {
 	u8 width  = type.Width;
 	u32  poly   = type.Poly;
@@ -1202,7 +1206,7 @@ unsigned int GetCRC(struct CrcInfoTypeS type, const  u8 *buf, u64 bufLen)
 	return (crc & ((2<<(width-1)) - 1));
 }
 
-u8 calculate_crc(const u8 *upgradeData, u64 len)
+static u8 calculate_crc(const u8 *upgradeData, u64 len)
 {
 	struct CrcInfoTypeS type = {
 		.Width = 8,
@@ -1224,7 +1228,7 @@ u8 calculate_crc(const u8 *upgradeData, u64 len)
 	return type.CrcInit;
 }
 
-void lt9611uxd_config(struct lt9611uxd *pdata)
+static void lt9611uxd_config(struct lt9611uxd *pdata)
 {
 	struct lt9611uxd_reg_cfg reg_cfg[] = {
 		{0xFF, 0xE0},
@@ -1240,7 +1244,7 @@ void lt9611uxd_config(struct lt9611uxd *pdata)
 	lt9611uxd_write_array(pdata, reg_cfg, ARRAY_SIZE(reg_cfg));
 }
 
-u16 lt9611uxd_get_version(struct lt9611uxd *pdata)
+static u16 lt9611uxd_get_version(struct lt9611uxd *pdata)
 {
 	u8 revison = 0;
 	u8 subversion = 0;
@@ -1261,7 +1265,7 @@ u16 lt9611uxd_get_version(struct lt9611uxd *pdata)
 	return result;
 }
 
-void lt9611uxd_flash_write_en(struct lt9611uxd *pdata)
+static void lt9611uxd_flash_write_en(struct lt9611uxd *pdata)
 {
 	struct lt9611uxd_reg_cfg reg_cfg[] = {
 		{0xFF, 0xE0},
@@ -1272,7 +1276,7 @@ void lt9611uxd_flash_write_en(struct lt9611uxd *pdata)
 	lt9611uxd_write_array(pdata, reg_cfg, ARRAY_SIZE(reg_cfg));
 }
 
-void lt9611uxd_flash_write_di(struct lt9611uxd *pdata)
+static void lt9611uxd_flash_write_di(struct lt9611uxd *pdata)
 {
 	struct lt9611uxd_reg_cfg reg_cfg[] = {
 		{0xFF, 0xE0},
@@ -1283,7 +1287,7 @@ void lt9611uxd_flash_write_di(struct lt9611uxd *pdata)
 	lt9611uxd_write_array(pdata, reg_cfg, ARRAY_SIZE(reg_cfg));
 }
 
-u8 lt9611uxd_read_flash_status(struct lt9611uxd *pdata)
+static u8 lt9611uxd_read_flash_status(struct lt9611uxd *pdata)
 {
 	u8 ucFlashStatusReg = 0;
 	struct lt9611uxd_reg_cfg reg_cfg[] = {
@@ -1308,19 +1312,21 @@ u8 lt9611uxd_read_flash_status(struct lt9611uxd *pdata)
 	return ucFlashStatusReg;
 }
 
-u8 lt9611uxd_read_fw_crc(struct lt9611uxd *pdata)
+static u8 lt9611uxd_read_fw_crc(struct lt9611uxd *pdata)
 {
 	u8 ucFwCrcReg = 0;
 
+	lt9611uxd_ctl_en(pdata);
 	if (!lt9611uxd_read(pdata, 0x21, &ucFwCrcReg, 1))
 		dev_dbg(pdata->dev, "LT9611 get ucFwCrcReg: 0x%x\n", ucFwCrcReg);
 	else
 		dev_err(pdata->dev, "LT9611 get ucFwCrcReg failed\n");
+	lt9611uxd_ctl_disable(pdata);
 
 	return ucFwCrcReg;
 }
 
-void lt9611uxd_block_erase(struct lt9611uxd *pdata)
+static void lt9611uxd_block_erase(struct lt9611uxd *pdata)
 {
 	u8 ucFlashStatus = 0;
 	u8 ucBlockNum = 0x00;
@@ -1361,7 +1367,7 @@ void lt9611uxd_block_erase(struct lt9611uxd *pdata)
 	dev_info(pdata->dev, "LT9611 block erase done\n");
 }
 
-void lt9611uxd_crc_to_sram(struct lt9611uxd *pdata)
+static void lt9611uxd_crc_to_sram(struct lt9611uxd *pdata)
 {
 	struct lt9611uxd_reg_cfg reg_cfg[] = {
 		{0xFF, 0xE0},
@@ -1375,7 +1381,7 @@ void lt9611uxd_crc_to_sram(struct lt9611uxd *pdata)
 	lt9611uxd_write_array(pdata, reg_cfg, ARRAY_SIZE(reg_cfg));
 }
 
-void lt9611uxd_data_to_sram(struct lt9611uxd *pdata)
+static void lt9611uxd_data_to_sram(struct lt9611uxd *pdata)
 {
 	struct lt9611uxd_reg_cfg reg_cfg[] = {
 		{0xFF, 0xE0},
@@ -1388,7 +1394,7 @@ void lt9611uxd_data_to_sram(struct lt9611uxd *pdata)
 	lt9611uxd_write_array(pdata, reg_cfg, ARRAY_SIZE(reg_cfg));
 }
 
-void lt9611uxd_sram_to_flash(struct lt9611uxd *pdata, u32 addr)
+static void lt9611uxd_sram_to_flash(struct lt9611uxd *pdata, u32 addr)
 {
 	struct lt9611uxd_reg_cfg reg_cfg[] = {
 		{0xFF, 0xE0},
@@ -1402,7 +1408,7 @@ void lt9611uxd_sram_to_flash(struct lt9611uxd *pdata, u32 addr)
 	lt9611uxd_write_array(pdata, reg_cfg, ARRAY_SIZE(reg_cfg));
 }
 
-void lt9611uxd_firmware_write(struct lt9611uxd *pdata, const u8 *f_data,
+static void lt9611uxd_firmware_write(struct lt9611uxd *pdata, const u8 *f_data,
 		int size)
 {
 	u8 last_buf[LT9611UXD_SRAM_PAGE_SIZE];
@@ -1439,7 +1445,7 @@ void lt9611uxd_firmware_write(struct lt9611uxd *pdata, const u8 *f_data,
 		size, total_page, rest_data);
 }
 
-void lt9611uxd_firmware_write_crc(struct lt9611uxd *pdata, const u8 *f_data,
+static void lt9611uxd_firmware_write_crc(struct lt9611uxd *pdata, const u8 *f_data,
 		int size)
 {
 	lt9611uxd_flash_write_en(pdata);
@@ -1451,7 +1457,7 @@ void lt9611uxd_firmware_write_crc(struct lt9611uxd *pdata, const u8 *f_data,
 	dev_info(pdata->dev, "LT9611 FW crc write over, total size: %d\n", size);
 }
 
-void lt9611uxd_firmware_upgrade(struct lt9611uxd *pdata,
+static void lt9611uxd_firmware_upgrade(struct lt9611uxd *pdata,
 			const struct firmware *cfg)
 {
 	int data_len = (int)cfg->size;
@@ -1694,6 +1700,26 @@ static int lt9611uxd_parse_dt(struct device *dev,
 		of_property_read_bool(np, "lt,audio-support");
 	dev_dbg(pdata->dev, "audio support = %d\n", pdata->audio_support);
 
+	/* pinctrl */
+	pdata->pinctrl = devm_pinctrl_get(dev);
+	if (IS_ERR(pdata->pinctrl)) {
+		ret = PTR_ERR(pdata->pinctrl);
+		pdata->pinctrl = NULL;
+		if (ret != -ENODEV) {
+			dev_err(dev, "lt9611uxd: failed to get pinctrl, rc=%d\n", ret);
+			return ret;
+		}
+		dev_dbg(dev, "lt9611uxd: pinctrl not available, skipping\n");
+	} else {
+		pdata->pinctrl_active = pinctrl_lookup_state(pdata->pinctrl, "active");
+		if (IS_ERR_OR_NULL(pdata->pinctrl_active)) {
+			dev_dbg(dev, "lt9611uxd: pinctrl active state not found\n");
+			pdata->pinctrl_active = NULL;
+		} else {
+			dev_dbg(dev, "lt9611uxd: pinctrl active state found\n");
+		}
+	}
+
 	/*get display modes from device tree*/
 	INIT_LIST_HEAD(&pdata->mode_list);
 	lt9611uxd_parse_dt_modes(np,
@@ -1925,7 +1951,7 @@ lt9611uxd_connector_detect(struct drm_connector *connector, bool force)
 	return pdata->status;
 }
 
-void dump_dtd(const u8 *desc)
+static void dump_dtd(const u8 *desc)
 {
 	u16 pixel_clock;
 	u16 h_active, h_blanking, h_total;
@@ -1951,7 +1977,7 @@ void dump_dtd(const u8 *desc)
 		h_active, v_active, refresh_rate, pixel_clock * 10);
 }
 
-void dump_edid(u8 *edid_buf, int size)
+static void dump_edid(u8 *edid_buf, int size)
 {
 	u8 *edid = edid_buf;
 	int i = 0;
@@ -2375,8 +2401,18 @@ static const struct drm_connector_funcs lt9611uxd_connector_funcs = {
 };
 
 
-static int lt9611uxd_bridge_attach(struct drm_bridge *bridge, enum drm_bridge_attach_flags flags)
+#if (KERNEL_VERSION(6, 16, 0) > LINUX_VERSION_CODE)
+static int lt9611uxd_bridge_attach(struct drm_bridge *bridge,
+				   enum drm_bridge_attach_flags flags)
+#else
+static int lt9611uxd_bridge_attach(struct drm_bridge *bridge,
+				   struct drm_encoder *encoder,
+				   enum drm_bridge_attach_flags flags)
+#endif
 {
+#if (KERNEL_VERSION(6, 16, 0) > LINUX_VERSION_CODE)
+	struct drm_encoder *encoder = bridge->encoder;
+#endif
 	struct mipi_dsi_host *host;
 	struct mipi_dsi_device *dsi;
 	struct lt9611uxd *pdata = bridge_to_lt9611(bridge);
@@ -2386,7 +2422,7 @@ static int lt9611uxd_bridge_attach(struct drm_bridge *bridge, enum drm_bridge_at
 						   .node = NULL,
 						 };
 
-	if (!bridge->encoder) {
+	if (!encoder) {
 		DRM_ERROR("Parent encoder object not found");
 		return -ENODEV;
 	}
@@ -2411,7 +2447,7 @@ static int lt9611uxd_bridge_attach(struct drm_bridge *bridge, enum drm_bridge_at
 	pdata->connector.polled = DRM_CONNECTOR_POLL_CONNECT;
 
 	ret = drm_connector_attach_encoder(&pdata->connector,
-						bridge->encoder);
+						encoder);
 	if (ret) {
 		DRM_ERROR("Failed to link up connector to encoder: %d\n", ret);
 		return ret;
@@ -2905,6 +2941,17 @@ static int lt9611uxd_probe(struct i2c_client *client)
 	if (ret) {
 		dev_err(&client->dev, "failed to parse device tree\n");
 		goto err_dt_parse;
+	}
+
+	if (pdata->pinctrl && pdata->pinctrl_active) {
+		ret = pinctrl_select_state(pdata->pinctrl, pdata->pinctrl_active);
+		if (ret) {
+			dev_err(&client->dev,
+				"lt9611uxd: failed to apply pinctrl active, rc=%d\n",
+				ret);
+			goto err_dt_parse;
+		}
+		dev_dbg(&client->dev, "lt9611uxd: pinctrl active state applied\n");
 	}
 
 	ret = lt9611uxd_gpio_configure(pdata, true);
