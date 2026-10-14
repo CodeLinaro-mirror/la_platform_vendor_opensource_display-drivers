@@ -9099,6 +9099,22 @@ int dsi_display_disable(struct dsi_display *display)
 	return rc;
 }
 
+void dsi_display_set_keep_dma_done_irq(struct mipi_dsi_host *host)
+{
+	struct dsi_display *display = to_dsi_display(host);
+	int i;
+
+	display_for_each_ctrl(i, display) {
+		struct dsi_display_ctrl *ctrl = &display->ctrl[i];
+
+		if (ctrl->ctrl) {
+			ctrl->ctrl->keep_dma_done_irq = true;
+			SDE_EVT32(SDE_EVTLOG_FUNC_ENTRY, ctrl->ctrl->cell_index,
+				ctrl->ctrl->keep_dma_done_irq);
+		}
+	}
+}
+
 int dsi_display_update_pps(char *pps_cmd, void *disp)
 {
 	struct dsi_display *display;
